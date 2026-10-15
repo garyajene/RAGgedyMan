@@ -23,13 +23,13 @@ def initialize_db():
 
 @mcp.tool()
 def server_status() -> str:
-    """Check whether the memory server is running."""
+    """Check whether RAGgedyMan is running."""
     return "RAGgedyMan MCP server is running successfully!"
 
 
 @mcp.tool()
 def save_memory(content: str) -> str:
-    """Save a memory for future retrieval."""
+    """Save information to long-term memory."""
     if not content.strip():
         return "Memory cannot be empty."
 
@@ -44,7 +44,7 @@ def save_memory(content: str) -> str:
 
 @mcp.tool()
 def search_memories(query: str) -> list:
-    """Search saved memories using keywords."""
+    """Search saved memories by keyword."""
     if not query.strip():
         return []
 
@@ -54,7 +54,7 @@ def search_memories(query: str) -> list:
             SELECT id, content
             FROM memories
             WHERE content ILIKE %s
-            ORDER BY created_at DESC
+            ORDER BY created_at DESC, id DESC
             LIMIT 20
             """,
             (f"%{query}%",)
@@ -66,9 +66,79 @@ def search_memories(query: str) -> list:
     ]
 
 
+@mcp.tool()
+def get_memory(memory_id: int) -> dict:
+    """Retrieve a specific memory by ID."""
+    with connect_db() as conn:
+        row = conn.execute(
+            """
+            SELECT id, content, created_at
+            FROM memories
+            WHERE id = %s
+            """,
+            (memory_id,)
+        ).fetchone()
+
+    if not row:
+        return {"error": "Memory not found"}
+
+    return {
+        "id": row[0],
+        "content": row[1],
+        "created_at": row[2].isoformat()
+    }
+
+
+@mcp.tool()
+def list_memories(limit: int = 20) -> list:
+    """List recently saved memories."""
+    limit = max(1, min(limit, 100))
+
+    with connect_db() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, content, created_at
+            FROM memories
+            ORDER BY created_at DESC, id DESC
+            LIMIT %s
+            """,
+            (limit,)
+        ).fetchall()
+
+    return [
+        {
+            "id": row[0],
+            "content": row[1],
+            "created_at": row[2].isoformat()
+        }
+        for row in rows
+    ]
+
+
+@mcp.tool()
+def delete_memory(memory_id: int) -> str:
+    """Delete a saved memory by ID."""
+    with connect_db() as conn:
+        row = conn.execute(
+            """
+            DELETE FROM memories
+            WHERE id = %s
+            RETURNING id
+            """,
+            (memory_id,)
+        ).fetchone()
+
+    if not row:
+        return "Memory not found."
+
+    return f"Memory {memory_id} deleted successfully."
+
+
 if __name__ == "__main__":
     initialize_db()
+
     port = int(os.environ.get("PORT", "8080"))
+
     mcp.run(
         transport="http",
         host="0.0.0.0",
